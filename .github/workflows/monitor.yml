@@ -1,0 +1,25 @@
+name: PadelMates Monitor
+
+on:
+  schedule:
+    - cron: '55-59 10 * * 1'
+    - cron: '* 11 * * 1'
+    - cron: '* 12 * * 1'
+    - cron: '* 13 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-sessions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install requests pytz
+      - name: Run single check
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python monitor_once.py
