@@ -11,33 +11,22 @@ NTFY_SERVER     = "https://ntfy.sh"
 LONDON_TZ       = pytz.timezone("Europe/London")
 STATE_FILE      = "notified_state.json"
 FIREBASE_KEY    = "AIzaSyCTllK1OKm-YRcEeKXEc2KNcPtmZFZrqIk"
-EMAIL           = os.environ.get("PADELMATES_EMAIL", "")
-PASSWORD        = os.environ.get("PADELMATES_PASSWORD", "")
 CHECK_INTERVAL  = 10
 TEST_DATE       = "2026-07-28"
 
 BASE_URL = "https://fastapi-production-fargate.padelmates.io"
 
 def firebase_login():
-    # Try Firebase first
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_KEY}"
-    payload = {"email": EMAIL, "password": PASSWORD, "returnSecureToken": True, "clientType": "CLIENT_TYPE_WEB"}
+    refresh_token = os.environ.get("PADELMATES_REFRESH_TOKEN", "")
+    url = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_KEY}"
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token
+    }
     r = requests.post(url, json=payload, timeout=10)
-    if r.status_code == 200:
-        token = r.json().get("idToken")
-        print("Firebase login successful")
-    else:
-        print(f"Firebase failed ({r.status_code}), trying PadelMates login...")
-        r2 = requests.post(
-            "https://nestjs-production-fargate.padelmates.io/auth/login",
-            json={"email": EMAIL, "password": PASSWORD},
-            timeout=10
-        )
-        r2.raise_for_status()
-        data = r2.json()
-        print(f"PadelMates login response: {str(data)[:200]}")
-        token = data.get("accessToken") or data.get("token") or data.get("idToken")
-        print("PadelMates login successful")
+    r.raise_for_status()
+    token = r.json().get("id_token")
+    print("Login successful via refresh token")
     return token
 
 def get_target_week():
