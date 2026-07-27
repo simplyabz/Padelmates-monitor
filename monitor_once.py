@@ -18,12 +18,15 @@ BASE_URL = "https://fastapi-production-fargate.padelmates.io"
 
 def firebase_login():
     refresh_token = os.environ.get("PADELMATES_REFRESH_TOKEN", "")
+    print(f"Refresh token length: {len(refresh_token)}")
     url = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_KEY}"
     payload = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token
     }
     r = requests.post(url, json=payload, timeout=10)
+    print(f"Response status: {r.status_code}")
+    print(f"Response body: {r.text[:500]}")
     r.raise_for_status()
     token = r.json().get("id_token")
     print("Login successful via refresh token")
