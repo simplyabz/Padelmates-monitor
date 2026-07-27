@@ -28,7 +28,6 @@ def firebase_login():
         print("Firebase login successful")
     else:
         print(f"Firebase failed ({r.status_code}), trying PadelMates login...")
-        # Try PadelMates NestJS login directly
         r2 = requests.post(
             "https://nestjs-production-fargate.padelmates.io/auth/login",
             json={"email": EMAIL, "password": PASSWORD},
