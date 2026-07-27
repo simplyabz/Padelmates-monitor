@@ -12,7 +12,7 @@ LONDON_TZ       = pytz.timezone("Europe/London")
 STATE_FILE      = "notified_state.json"
 FIREBASE_KEY    = "AIzaSyCTllK1OKm-YRcEeKXEc2KNcPtmZFZrqIk"
 CHECK_INTERVAL  = 10
-TEST_DATE       = none
+TEST_DATE       = None
 
 TARGET_SESSIONS = [
     "monday club night",
