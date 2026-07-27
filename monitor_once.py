@@ -20,8 +20,7 @@ TARGET_SESSIONS = [
     "padel n pizza",
 ]
 
-BASE_URL   = "https://nestjs-production-fargate.padelmates.io"
-FAST_URL   = "https://fastapi-production-fargate.padelmates.io"
+BASE_URL = "https://nestjs-production-fargate.padelmates.io"
 
 def firebase_login():
     refresh_token = os.environ.get("PADELMATES_REFRESH_TOKEN", "")
@@ -57,7 +56,7 @@ def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE) as f:
             return json.load(f)
-    return {"notified_slots": [], "booked": []}
+    return {"notified": [], "booked": []}
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
@@ -66,63 +65,32 @@ def save_state(state):
 def auth_headers(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-def get_activities(token, start_dt, end_dt):
-    endpoints = [
-        f"{BASE_URL}/tournament/getClubActivities",
-        f"{BASE_URL}/tournament/getActivities",
-        f"{BASE_URL}/activity/getActivities",
-        f"{FAST_URL}/activity/get_activities",
-        f"{FAST_URL}/player/activity/get_activities",
-    ]
-    params = {
-        "clubId": CLUB_ID,
-        "club_id": CLUB_ID,
-        "startDatetime": to_ms(start_dt),
-        "endDatetime": to_ms(end_dt),
-        "start_datetime": to_ms(start_dt),
-        "end_datetime": to_ms(end_dt),
-    }
-    for url in endpoints:
-        try:
-            r = requests.get(url, params=params, headers=auth_headers(token), timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                activities = data if isinstance(data, list) else data.get("data", data.get("activities", []))
-                if activities:
-                    print(f"Activities found at: {url} ({len(activities)} sessions)")
-                    return activities
-        except Exception as e:
-            print(f"{url} error: {e}")
-    return []
+def get_activities(start_dt, end_dt):
+    url = f"{BASE_URL}/webportal/getClubActivityRecordsWithoutAuth/{CLUB_ID}"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        all_sessions = r.json()
+        start_ms = to_ms(start_dt)
+        end_ms = to_ms(end_dt)
+        filtered = [s for s in all_sessions if start_ms <= s.get("start_datetime", 0) <= end_ms]
+        print(f"Fetched {len(all_sessions)} total, {len(filtered)} in target week")
+        return filtered
+    except Exception as e:
+        print(f"Activities error: {e}")
+        return []
 
-def is_target_session(name):
-    name_lower = name.lower()
-    for target in TARGET_SESSIONS:
-        if target in name_lower:
-            return True
-    return False
+def is_target_session(title):
+    return any(target in title.lower() for target in TARGET_SESSIONS)
 
-def book_activity(token, activity):
-    activity_id = activity.get("_id") or activity.get("id")
-    name = activity.get("name", "Unknown")
-    start_time = activity.get("startDatetime") or activity.get("start_datetime")
-    end_time = activity.get("endDatetime") or activity.get("end_datetime")
-    price = activity.get("price", 0)
+def book_activity(token, session):
+    activity_id = session.get("_id")
+    title = session.get("title", "Unknown")
+    start_ms = session.get("start_datetime")
+    end_ms = session.get("stop_datetime")
+    price = session.get("payment_per_person", 0)
 
-    if isinstance(start_time, str):
-        try:
-            dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            start_ms = to_ms(dt)
-            dt_end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-            end_ms = to_ms(dt_end)
-        except:
-            start_ms = start_time
-            end_ms = end_time
-    else:
-        start_ms = start_time
-        end_ms = end_time
-
-    print(f"Attempting to book: {name} (ID: {activity_id})")
+    print(f"Attempting to book: {title} (£{price})")
 
     payload = {
         "payFor": "training",
@@ -147,12 +115,7 @@ def book_activity(token, activity):
     }
 
     try:
-        r = requests.post(
-            f"{BASE_URL}/payment/createPaymentIntent",
-            json=payload,
-            headers=auth_headers(token),
-            timeout=15
-        )
+        r = requests.post(f"{BASE_URL}/payment/createPaymentIntent", json=payload, headers=auth_headers(token), timeout=15)
         r.raise_for_status()
         intent_data = r.json()
         print(f"Payment intent: {str(intent_data)[:300]}")
@@ -160,36 +123,29 @@ def book_activity(token, activity):
         payment_intent_id = (
             intent_data.get("paymentIntentId") or
             intent_data.get("id") or
-            intent_data.get("data", {}).get("paymentIntentId")
+            (intent_data.get("data") or {}).get("paymentIntentId")
         )
 
         if not payment_intent_id:
-            print(f"No payment intent ID found: {intent_data}")
+            print(f"No payment intent ID in: {intent_data}")
             return False
 
-        r2 = requests.get(
-            f"{BASE_URL}/payment/check-charge-auto-join-v2",
-            params={"paymentintentid": payment_intent_id},
-            headers=auth_headers(token),
-            timeout=15
-        )
+        r2 = requests.get(f"{BASE_URL}/payment/check-charge-auto-join-v2",
+            params={"paymentintentid": payment_intent_id}, headers=auth_headers(token), timeout=15)
         r2.raise_for_status()
-        result = r2.json()
-        print(f"Booking result: {str(result)[:300]}")
+        print(f"Booking result: {str(r2.json())[:300]}")
         return True
 
     except Exception as e:
-        print(f"Booking failed for {name}: {e}")
+        print(f"Booking failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Error detail: {e.response.text[:300]}")
         return False
 
 def send_notification(title, message):
     try:
-        requests.post(
-            f"{NTFY_SERVER}/{NTFY_TOPIC}",
-            data=message.encode("utf-8"),
-            headers={"Title": title, "Priority": "urgent", "Tags": "tennis,bell"},
-            timeout=10
-        )
+        requests.post(f"{NTFY_SERVER}/{NTFY_TOPIC}", data=message.encode("utf-8"),
+            headers={"Title": title, "Priority": "urgent", "Tags": "tennis,bell"}, timeout=10)
         print(f"Notification sent: {title}")
     except Exception as e:
         print(f"Notification failed: {e}")
@@ -206,58 +162,50 @@ def main():
 
     target_start, target_end = get_target_week()
     state = load_state()
-    notified_slots = set(state.get("notified_slots", []))
+    notified = set(state.get("notified", []))
     booked = set(state.get("booked", []))
-
     run_until = time.time() + 55
 
     while time.time() < run_until:
-        check_time = datetime.now(LONDON_TZ)
-        print(f"\nChecking at {check_time.strftime('%H:%M:%S')}...")
-
-        activities = get_activities(token, target_start, target_end)
+        print(f"\nChecking at {datetime.now(LONDON_TZ).strftime('%H:%M:%S')}...")
+        activities = get_activities(target_start, target_end)
 
         if activities:
-            new_activities = []
-            for a in activities:
-                act_id = a.get("_id") or a.get("id", "")
-                key = f"act_{act_id}"
-                if key not in notified_slots:
-                    new_activities.append(a)
-                    notified_slots.add(key)
-
-            if new_activities:
-                names = [a.get("name", "Unknown") for a in new_activities]
+            new_sessions = [a for a in activities if a.get("_id") not in notified]
+            if new_sessions:
+                names = [a.get("title", "Unknown") for a in new_sessions]
                 send_notification(
-                    title=f"🎾 {len(new_activities)} new sessions released!",
+                    title=f"🎾 {len(new_sessions)} new sessions released!",
                     message=f"Week of {target_start.strftime('%d %b')}:\n" +
                             "\n".join(f"• {n}" for n in names[:10]) +
-                            "\n\npadelmates.se/club/788fa2c66535421aabc60fd27f941c42"
+                            f"\n\npadelmates.se/club/{CLUB_ID}"
                 )
+                for a in new_sessions:
+                    notified.add(a.get("_id"))
 
             for a in activities:
-                act_id = a.get("_id") or a.get("id", "")
-                name = a.get("name", "")
-                if act_id in booked:
+                act_id = a.get("_id")
+                title = a.get("title", "")
+                is_full = a.get("current_no_of_players", 0) >= a.get("no_of_players", 999)
+                if act_id in booked or not is_target_session(title) or is_full:
                     continue
-                if is_target_session(name):
-                    print(f"Target session found: {name}")
-                    success = book_activity(token, a)
-                    if success:
-                        booked.add(act_id)
-                        send_notification(
-                            title=f"✅ Booked: {name}!",
-                            message=f"Successfully booked and paid for {name} — week of {target_start.strftime('%d %b')}!"
-                        )
-                    else:
-                        send_notification(
-                            title=f"⚠️ Booking failed: {name}",
-                            message=f"Found {name} but couldn't auto-book. Book manually now!"
-                        )
+                print(f"Target session available: {title}")
+                success = book_activity(token, a)
+                if success:
+                    booked.add(act_id)
+                    send_notification(
+                        title=f"✅ Booked: {title}!",
+                        message=f"Booked and paid £{a.get('payment_per_person')} for {title} — week of {target_start.strftime('%d %b')}!"
+                    )
+                else:
+                    send_notification(
+                        title=f"⚠️ Booking failed: {title}",
+                        message=f"Found {title} but auto-booking failed. Book manually!\npadelmates.se/club/{CLUB_ID}"
+                    )
         else:
-            print("No activities found yet")
+            print("No sessions found for target week yet")
 
-        state["notified_slots"] = list(notified_slots)
+        state["notified"] = list(notified)
         state["booked"] = list(booked)
         save_state(state)
 
