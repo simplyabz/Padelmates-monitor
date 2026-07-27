@@ -19,12 +19,26 @@ TEST_DATE       = "2026-07-28"
 BASE_URL = "https://fastapi-production-fargate.padelmates.io"
 
 def firebase_login():
+    # Try Firebase first
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_KEY}"
     payload = {"email": EMAIL, "password": PASSWORD, "returnSecureToken": True, "clientType": "CLIENT_TYPE_WEB"}
     r = requests.post(url, json=payload, timeout=10)
-    r.raise_for_status()
-    token = r.json().get("idToken")
-    print("Login successful")
+    if r.status_code == 200:
+        token = r.json().get("idToken")
+        print("Firebase login successful")
+    else:
+        print(f"Firebase failed ({r.status_code}), trying PadelMates login...")
+        # Try PadelMates NestJS login directly
+        r2 = requests.post(
+            "https://nestjs-production-fargate.padelmates.io/auth/login",
+            json={"email": EMAIL, "password": PASSWORD},
+            timeout=10
+        )
+        r2.raise_for_status()
+        data = r2.json()
+        print(f"PadelMates login response: {str(data)[:200]}")
+        token = data.get("accessToken") or data.get("token") or data.get("idToken")
+        print("PadelMates login successful")
     return token
 
 def get_target_week():
