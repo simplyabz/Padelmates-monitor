@@ -144,8 +144,17 @@ def book_activity(token, session):
 
 def send_notification(title, message):
     try:
-        requests.post(f"{NTFY_SERVER}/{NTFY_TOPIC}", data=message.encode("utf-8"),
-            headers={"Title": title, "Priority": "urgent", "Tags": "tennis,bell"}, timeout=10)
+        requests.post(
+            f"{NTFY_SERVER}/{NTFY_TOPIC}",
+            data=message.encode("utf-8"),
+            headers={
+                "Title": title.encode("utf-8").decode("latin-1", errors="replace"),
+                "Priority": "urgent",
+                "Tags": "white_check_mark",
+                "Content-Type": "text/plain; charset=utf-8",
+            },
+            timeout=10
+        )
         print(f"Notification sent: {title}")
     except Exception as e:
         print(f"Notification failed: {e}")
