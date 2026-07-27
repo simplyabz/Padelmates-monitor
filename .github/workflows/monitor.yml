@@ -22,4 +22,7 @@ jobs:
       - name: Run single check
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PADELMATES_EMAIL: ${{ secrets.PADELMATES_EMAIL }}
+          PADELMATES_PASSWORD: ${{ secrets.PADELMATES_PASSWORD }}
+          PADELMATES_REFRESH_TOKEN: ${{ secrets.PADELMATES_REFRESH_TOKEN }}
         run: python monitor_once.py
