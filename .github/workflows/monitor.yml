@@ -2,10 +2,13 @@ name: PadelMates Monitor
 
 on:
   schedule:
-    - cron: '55-59 10 * * 1'
     - cron: '* 11 * * 1'
     - cron: '* 12 * * 1'
     - cron: '* 13 * * 1'
+    - cron: '* 14 * * 1'
+    - cron: '* 15 * * 1'
+    - cron: '* 16 * * 1'
+    - cron: '* 17 * * 1'
   workflow_dispatch:
 
 jobs:
